@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,30 +32,55 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Extract project
+      - name: Extract and locate project
+        shell: bash
         run: |
           set -e
+
+          test -f obd2_garage_v06_ready.zip
+
           mkdir -p obd2_garage_v06
           unzip -o obd2_garage_v06_ready.zip -d obd2_garage_v06
-          test -f obd2_garage_v06/pubspec.yaml
+
+          if [ -f obd2_garage_v06/pubspec.yaml ]; then
+            PROJECT="obd2_garage_v06"
+          elif [ -f obd2_garage_v06/obd2_garage_v06/pubspec.yaml ]; then
+            PROJECT="obd2_garage_v06/obd2_garage_v06"
+          else
+            echo "ERROR: pubspec.yaml not found"
+            find obd2_garage_v06 -maxdepth 5 -name pubspec.yaml
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Using project: $PROJECT"
 
       - name: Generate Android project
-        working-directory: obd2_garage_v06
+        shell: bash
         run: |
+          set -e
+          cd "$PROJECT_DIR"
           flutter create . --platforms=android
 
       - name: Restore Android manifest
+        shell: bash
         run: |
+          set -e
+          cd "$PROJECT_DIR"
+
           if [ -f android_manifest.xml ]; then
             cp android_manifest.xml \
-              obd2_garage_v06/android/app/src/main/AndroidManifest.xml
+              android/app/src/main/AndroidManifest.xml
           fi
 
-      - name: Get Flutter dependencies
-        working-directory: obd2_garage_v06
-        run: flutter pub get
+      - name: Get dependencies
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          flutter pub get
 
-      - name: Fix legacy Bluetooth plugin
+      - name: Fix Bluetooth plugin compatibility
         shell: bash
         run: |
           set -e
@@ -63,7 +88,10 @@ jobs:
           PLUGIN="$HOME/.pub-cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android"
 
           if [ ! -f "$PLUGIN/build.gradle" ]; then
-            echo "Bluetooth plugin build.gradle not found"
+            echo "ERROR: Bluetooth plugin not found"
+            find "$HOME/.pub-cache/hosted/pub.dev" \
+              -maxdepth 2 -type d \
+              -name 'flutter_bluetooth_serial-*' || true
             exit 1
           fi
 
@@ -79,28 +107,22 @@ jobs:
           manifest = plugin / "src/main/AndroidManifest.xml"
 
           text = gradle.read_text()
-
           text = re.sub(r'\bjcenter\s*\(\s*\)', 'mavenCentral()', text)
 
           if not re.search(r'^\s*namespace\s+', text, re.M):
-              package = None
+              package = "io.github.edufolly.flutterbluetoothserial"
+
               if manifest.exists():
-                  xml = manifest.read_text()
                   match = re.search(
                       r'<manifest\b[^>]*\bpackage\s*=\s*["\']([^"\']+)',
-                      xml
+                      manifest.read_text()
                   )
                   if match:
                       package = match.group(1)
 
-              if not package:
-                  package = "io.github.edufolly.flutterbluetoothserial"
-
               match = re.search(r'\bandroid\s*\{', text)
               if not match:
-                  raise SystemExit(
-                      "Could not find android { block in Bluetooth plugin"
-                  )
+                  raise SystemExit("Android block not found in plugin")
 
               pos = match.end()
               text = (
@@ -110,17 +132,27 @@ jobs:
               )
 
           gradle.write_text(text)
-          print("Bluetooth plugin Gradle compatibility patch applied.")
+          print("Bluetooth plugin patch applied.")
           PY
 
+      - name: Analyze Dart code
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          flutter analyze --no-pub
+
       - name: Build debug APK
-        working-directory: obd2_garage_v06
-        run: flutter build apk --debug --stacktrace
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: obd2-garage-debug-apk
-          path: obd2_garage_v06/build/app/outputs/flutter-apk/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
-
+          retention-days: 7
