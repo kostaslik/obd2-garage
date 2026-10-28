@@ -59,8 +59,10 @@ jobs:
           sed -i "/apply plugin: 'kotlin-android'/i apply plugin: 'com.android.library'" "$PLUGIN"
 
       - name: Build APK
-        working-directory: obd2_garage_v06
-        run: flutter build apk --debug --stacktrace
+  working-directory: obd2_garage_v06
+  run: flutter build apk --debug
+        
+
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
