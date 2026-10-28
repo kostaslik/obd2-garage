@@ -1,47 +1,36 @@
-
 name: Build Android APK
-
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-
 permissions:
   contents: read
-
 jobs:
   build:
-    name: Build OBD2 Garage APK
+    name: Build OBD Garage R56 APK
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.7'
           channel: stable
           cache: true
-
       - name: Extract and locate project
         shell: bash
         run: |
           set -e
-
           test -f obd2_garage_v06_ready.zip
-
           mkdir -p obd2_garage_v06
           unzip -o obd2_garage_v06_ready.zip -d obd2_garage_v06
-
           if [ -f obd2_garage_v06/pubspec.yaml ]; then
             PROJECT="obd2_garage_v06"
           elif [ -f obd2_garage_v06/obd2_garage_v06/pubspec.yaml ]; then
@@ -51,91 +40,74 @@ jobs:
             find obd2_garage_v06 -maxdepth 5 -name pubspec.yaml
             exit 1
           fi
-
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
           echo "Using project: $PROJECT"
-
       - name: Generate Android project
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
           flutter create . --platforms=android
-
+      - name: Use repository Dart sources
+        shell: bash
+        run: |
+          set -e
+          test -f main.dart
+          test -f obd_parser.dart
+          mkdir -p "$PROJECT_DIR/lib"
+          cp main.dart "$PROJECT_DIR/lib/main.dart"
+          cp obd_parser.dart "$PROJECT_DIR/lib/obd_parser.dart"
       - name: Repair Dart source errors
         shell: bash
         run: |
           set -e
-
           python3 <<'PY'
           import os
           import re
           from pathlib import Path
-
           project = Path(os.environ["PROJECT_DIR"])
           main = project / "lib" / "main.dart"
-
           if not main.exists():
               raise SystemExit(f"Missing Dart file: {main}")
-
           source = main.read_text(encoding="utf-8")
-
-          # dispose() returns void; do not await it.
           source = re.sub(
               r'\bawait\s+_connection\?\.dispose\(\)\s*;',
               '_connection?.dispose();',
               source
           )
-
-          # Repair the broken multiline strings in showCodingInfo.
           start = source.find('  void showCodingInfo(String feature) {')
           end = source.find(
               '  Future<void> disconnect() async {',
               start
           )
-
           if start < 0 or end < 0:
               raise SystemExit(
                   "Could not locate showCodingInfo; source unchanged."
               )
-
-          replacement = """  void showCodingInfo(String feature) {
-            late final String details;
-
-            if (feature == 'LED — προειδοποίηση καμένης λάμπας') {
-              details = '''
-          Διαθέσιμες ρυθμίσεις που μπορεί να υποστηρίζει το MINI R56, ανάλογα με τη μονάδα FRM και τον εξοπλισμό:
-
-          • Μεσαία/χαμηλή σκάλα (low beam)
-          • Μεγάλη σκάλα (high beam)
+          replacement = r"""  void showCodingInfo(String feature) {
+            const details = '''
+          Οι επιλογές coding εξαρτώνται από τις μονάδες FRM/MRS και τον εξοπλισμό του συγκεκριμένου MINI R56.
+          Πιθανές ρυθμίσεις φωτισμού:
+          • Μεσαία/χαμηλή σκάλα
+          • Μεγάλη σκάλα
           • Φώτα θέσης / Angel Eyes
-          • Μπροστινά και πίσω φλας
-          • Φώτα φρένων και τρίτο φως φρένων
-          • Φώτα ομίχλης, όπισθεν και πινακίδας
-
-          Η ακριβής λίστα εξαρτάται από FRM2 ή FRM3. Πρέπει πρώτα να αναγνωριστεί η μονάδα και να διαβαστεί/αποθηκευτεί η αρχική κωδικοποίηση. Το σημερινό ELM327 της εφαρμογής υποστηρίζει γενικό OBD-II και δεν μπορεί να γράψει αυτές τις ρυθμίσεις.
+          • Φλας
+          • Φώτα φρένων
+          • Φώτα ομίχλης
+          • Φώτα όπισθεν
+          • Φωτισμός πινακίδας
+          Υπενθύμιση ζώνης:
+          Η διαθεσιμότητα των σχετικών ρυθμίσεων εξαρτάται από τη μονάδα ασφαλείας και τον εξοπλισμό.
+          ΣΗΜΑΝΤΙΚΟ:
+          Το γενικό ELM327 χρησιμοποιείται εδώ για διαγνωστικά OBD-II. Δεν θεωρούμε ότι υποστηρίζει εγγραφή κωδικοποίησης στις μονάδες MINI/BMW. Δεν πραγματοποιείται καμία αλλαγή coding από αυτή την οθόνη.
           ''';
-            } else if (feature == 'Ηχητική υπενθύμιση ζώνης') {
-              details = '''
-          Στο R56 η σχετική ρύθμιση βρίσκεται στη μονάδα αερόσακων MRS6 και μπορεί να περιλαμβάνει:
-
-          • Αρχική ηχητική υπενθύμιση μετά την εκκίνηση
-          • Ηχητική/οπτική υπενθύμιση οδηγού
-          • Ηχητική/οπτική υπενθύμιση συνοδηγού
-
-          Δεν έχει επιβεβαιωθεί ακόμη ποια επιλογή είναι διαθέσιμη στη δική σου μονάδα. Η εφαρμογή δεν στέλνει αλλαγή με το ELM327. Για λόγους ασφάλειας, χρησιμοποίησε πάντα τη ζώνη.
-          ''';
-            } else {
-              details = 'Πριν προστεθούν άλλες πραγματικές επιλογές coding, χρειάζεται αναγνώριση των μονάδων του αυτοκινήτου, συμβατός αντάπτορας και ασφαλής ανάγνωση/αποθήκευση των αρχικών ρυθμίσεων. Το απλό ELM327 που χρησιμοποιείται τώρα για γενικό OBD-II δεν αρκεί για να θεωρήσουμε ότι υποστηρίζει BMW/MINI coding.';
-            }
-
             showDialog<void>(
               context: context,
               builder: (ctx) => AlertDialog(
                 title: Text(feature),
-                content: SingleChildScrollView(
+                content: const SingleChildScrollView(
                   child: Text(
-                    '$details\\n\\nΚατάσταση: Πληροφορίες/προετοιμασία μόνο — η εγγραφή coding δεν είναι ακόμη ενεργή. Δεν θα εμφανιστεί ψεύτικη επιβεβαίωση αλλαγής.'
+                    '$details\\n\\nΚατάσταση: πληροφορίες μόνο. Η εγγραφή coding δεν είναι ενεργή.'
                   ),
                 ),
                 actions: [
@@ -148,89 +120,51 @@ jobs:
             );
           }
           """
-
           source = source[:start] + replacement + source[end:]
-
-          # Repair the final multiline note.
-          note = """const Text('''Σημείωση: το PID 015C είναι η τυπική εντολή θερμοκρασίας λαδιού· αν εμφανιστεί N/A, δεν επιστράφηκαν δεδομένα. Η διαγραφή DTC αφορά γενικούς κωδικούς OBD-II και δεν διαγράφει απαραίτητα σφάλματα φωτισμού της μονάδας FRM. Το πραγματικό coding MINI και η σύνδεση iPhone δεν έχουν υλοποιηθεί ακόμη.
-          Το κουμπί «Έλεγχος αντάπτορα» διαβάζει ATI/AT@1/ATDP για να βοηθήσει στην αναγνώριση της συσκευής, αλλά δεν αποτελεί δοκιμή δυνατότητας coding.''', style: TextStyle(color: Colors.white60, fontSize: 12)),"""
-
-          source, count = re.subn(
-          r"const Text\((?:'''|')Σημείωση: το PID 015C.*?fontSize: 12\)\),",
-            
-              lambda _: note,
-              source,
-              count=1,
-              flags=re.S
-          )
-
-          if count != 1:
-              raise SystemExit(
-                  "Could not locate the final multiline note."
-              )
-
           main.write_text(source, encoding="utf-8")
-
-          # The generated default test expects MyApp.
           test_file = project / "test" / "widget_test.dart"
           if test_file.exists():
               test_source = test_file.read_text(encoding="utf-8")
               test_source = test_source.replace("MyApp", "ObdApp")
               test_file.write_text(test_source, encoding="utf-8")
-
           print("Dart source repairs applied.")
           PY
-
       - name: Restore Android manifest
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
-
           if [ -f android_manifest.xml ]; then
             cp android_manifest.xml \
               android/app/src/main/AndroidManifest.xml
           fi
-
       - name: Get dependencies
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
           flutter pub get
-
       - name: Fix Bluetooth plugin compatibility
         shell: bash
         run: |
           set -e
-
           PLUGIN="$HOME/.pub-cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android"
-
           if [ ! -f "$PLUGIN/build.gradle" ]; then
             echo "ERROR: Bluetooth plugin not found"
-            find "$HOME/.pub-cache/hosted/pub.dev" \
-              -maxdepth 2 -type d \
-              -name 'flutter_bluetooth_serial-*' || true
             exit 1
           fi
-
           export PLUGIN
-
           python3 <<'PY'
           import os
           import re
           from pathlib import Path
-
           plugin = Path(os.environ["PLUGIN"])
           gradle = plugin / "build.gradle"
           manifest = plugin / "src/main/AndroidManifest.xml"
-
           text = gradle.read_text()
           text = re.sub(r'\bjcenter\s*\(\s*\)', 'mavenCentral()', text)
-
           if not re.search(r'^\s*namespace\s+', text, re.M):
               package = "io.github.edufolly.flutterbluetoothserial"
-
               if manifest.exists():
                   match = re.search(
                       r'<manifest\b[^>]*\bpackage\s*=\s*["\']([^"\']+)',
@@ -238,41 +172,34 @@ jobs:
                   )
                   if match:
                       package = match.group(1)
-
               match = re.search(r'\bandroid\s*\{', text)
               if not match:
                   raise SystemExit("Android block not found in plugin")
-
               pos = match.end()
               text = (
                   text[:pos]
                   + '\n    namespace "' + package + '"\n'
                   + text[pos:]
               )
-
           gradle.write_text(text)
           print("Bluetooth plugin patch applied.")
           PY
-
       - name: Analyze Dart code
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
           flutter analyze --no-pub --no-fatal-infos
-          
-
       - name: Build debug APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
           flutter build apk --debug
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: obd2-garage-debug-apk
+          name: obd-garage-r56-debug-apk
           path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
