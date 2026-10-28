@@ -4,17 +4,19 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    name: Build OBD2 Garage APK
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -23,168 +25,102 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract project
-        shell: bash
-        run: |
-          set -e
-          unzip -o obd2_garage_v06_ready.zip
-          echo "=== Project files ==="
-          find . -maxdepth 4 \( -name pubspec.yaml -o -name main.dart -o -name obd_parser.dart -o -name android_manifest.xml \) -print
-
-      - name: Locate and patch Dart source
-        shell: bash
-        run: |
-          set -e
-          MAIN="$(find obd2_garage_v06 -path '*/lib/main.dart' -type f -print -quit)"
-          if [ -z "$MAIN" ]; then
-            echo "ERROR: Δεν βρέθηκε lib/main.dart μέσα στο project."
-            exit 1
-          fi
-          echo "Patching: $MAIN"
-          python3 - "$MAIN" <<'PY'
-          from pathlib import Path
-          import re
-          import sys
-
-          path = Path(sys.argv[1])
-          source = path.read_text(encoding="utf-8")
-
-          source = source.replace(
-              "await _connection?.dispose();",
-              "_connection?.dispose();"
-          )
-
-          replacement = r'''void showCodingInfo(String feature) {
-            String details;
-
-            if (feature == 'LED — προειδοποίηση καμένης λάμπας') {
-              details =
-                  'Διαθέσιμες ρυθμίσεις που μπορεί να υποστηρίζει το MINI R56, ανάλογα με τη μονάδα FRM και τον εξοπλισμό:\n\n'
-                  '• Μεσαία/χαμηλή σκάλα (low beam)\n'
-                  '• Μεγάλη σκάλα (high beam)\n'
-                  '• Φώτα θέσης / Angel Eyes\n'
-                  '• Μπροστινά και πίσω φλας\n'
-                  '• Φώτα φρένων και τρίτο φως φρένων\n'
-                  '• Φώτα ομίχλης, όπισθεν και πινακίδας\n\n'
-                  'Η ακριβής λίστα εξαρτάται από FRM2 ή FRM3. Πρέπει πρώτα να αναγνωριστεί η μονάδα και να διαβαστεί/αποθηκευτεί η αρχική κωδικοποίηση. Το σημερινό ELM327 της εφαρμογής υποστηρίζει γενικό OBD-II και δεν μπορεί να γράψει αυτές τις ρυθμίσεις.';
-            } else if (feature == 'Ηχητική υπενθύμιση ζώνης') {
-              details =
-                  'Στο R56 η σχετική ρύθμιση βρίσκεται στη μονάδα αερόσακων MRS6 και μπορεί να περιλαμβάνει:\n\n'
-                  '• Αρχική ηχητική υπενθύμιση μετά την εκκίνηση\n'
-                  '• Ηχητική/οπτική υπενθύμιση οδηγού\n'
-                  '• Ηχητική/οπτική υπενθύμιση συνοδηγού\n\n'
-                  'Δεν έχει επιβεβαιωθεί ακόμη ποια επιλογή είναι διαθέσιμη στη δική σου μονάδα. Η εφαρμογή δεν στέλνει αλλαγή με το ELM327. Για λόγους ασφάλειας, χρησιμοποίησε πάντα τη ζώνη.';
-            } else {
-              details =
-                  'Πριν προστεθούν άλλες πραγματικές επιλογές coding, χρειάζεται αναγνώριση των μονάδων του αυτοκινήτου, συμβατός αντάπτορας και ασφαλής ανάγνωση/αποθήκευση των αρχικών ρυθμίσεων. Το απλό ELM327 που χρησιμοποιείται τώρα για γενικό OBD-II δεν αρκεί για να θεωρήσουμε ότι υποστηρίζει BMW/MINI coding.';
-            }
-
-            showDialog<void>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: Text(feature),
-                content: SingleChildScrollView(
-                  child: Text(
-                    '$details\n\nΚατάσταση: Πληροφορίες/προετοιμασία μόνο — η εγγραφή coding δεν είναι ακόμη ενεργή. Δεν θα εμφανιστεί ψεύτικη επιβεβαίωση αλλαγής.',
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Εντάξει'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          Future<void> disconnect() async {'''
-
-          pattern = r"void showCodingInfo\(String feature\)\s*\{.*?(?=Future<void> disconnect\(\) async \{)"
-          source, count = re.subn(
-              pattern, lambda _: replacement, source, count=1, flags=re.S
-          )
-          if count != 1:
-              sys.exit("ERROR: Δεν βρέθηκε η showCodingInfo για αυτόματη διόρθωση.")
-
-          path.write_text(source, encoding="utf-8")
-          print("Dart source patched successfully.")
-          PY
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.7'
+          channel: stable
           cache: true
 
-      - name: Check project structure
+      - name: Extract project
+        run: |
+          set -e
+          mkdir -p obd2_garage_v06
+          unzip -o obd2_garage_v06_ready.zip -d obd2_garage_v06
+          test -f obd2_garage_v06/pubspec.yaml
+
+      - name: Generate Android project
         working-directory: obd2_garage_v06
         run: |
-          test -f pubspec.yaml
-          test -f android_manifest.xml
-          test -f lib/main.dart
-          test -f lib/obd_parser.dart
-          flutter --version
+          flutter create . --platforms=android
 
-      - name: Generate Android files
-        working-directory: obd2_garage_v06
-        run: flutter create . --platforms=android --project-name=obd2_garage
+      - name: Restore Android manifest
+        run: |
+          if [ -f android_manifest.xml ]; then
+            cp android_manifest.xml \
+              obd2_garage_v06/android/app/src/main/AndroidManifest.xml
+          fi
 
-      - name: Apply Android permissions
-        working-directory: obd2_garage_v06
-        run: cp android_manifest.xml android/app/src/main/AndroidManifest.xml
-
-      - name: Install dependencies
+      - name: Get Flutter dependencies
         working-directory: obd2_garage_v06
         run: flutter pub get
 
-      - name: Patch Bluetooth plugin
+      - name: Fix legacy Bluetooth plugin
         shell: bash
         run: |
           set -e
-          PLUGIN="$HOME/.pub-cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android/build.gradle"
-          MANIFEST="$HOME/.pub-cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android/src/main/AndroidManifest.xml"
 
-          if [ -f "$PLUGIN" ] && [ -f "$MANIFEST" ]; then
-            sed -i 's/jcenter()/mavenCentral()/g' "$PLUGIN"
+          PLUGIN="$HOME/.pub-cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android"
 
-            python3 - "$PLUGIN" "$MANIFEST" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          gradle_path, manifest_path = map(Path, sys.argv[1:3])
-          manifest = manifest_path.read_text(encoding="utf-8")
-          match = re.search(
-              r'<manifest\b[^>]*\bpackage\s*=\s*["\']([^"\']+)["\']',
-              manifest
-          )
-          if not match:
-              sys.exit("ERROR: Cannot determine Bluetooth plugin namespace")
-          namespace = match.group(1)
-          gradle = gradle_path.read_text(encoding="utf-8")
-          if not re.search(r'(?m)^\s*namespace\s+[\'"]', gradle):
-              gradle, count = re.subn(
-                  r'(?m)^(\s*android\s*\{)',
-                  lambda m: m.group(1) + '\n    namespace "' + namespace + '"',
-                  gradle, count=1
-              )
-              if count != 1:
-                  sys.exit("ERROR: Cannot find android block in plugin build.gradle")
-              gradle_path.write_text(gradle, encoding="utf-8")
-            sed -i "/apply plugin: 'kotlin-android'/i apply plugin: 'com.android.library'" "$PLUGIN"
-          else
-            echo "Bluetooth plugin files not found at expected path."
-            find "$HOME/.pub-cache/hosted/pub.dev" -path '*/flutter_bluetooth_serial*/android/build.gradle' -print
+          if [ ! -f "$PLUGIN/build.gradle" ]; then
+            echo "Bluetooth plugin build.gradle not found"
+            exit 1
           fi
 
-      - name: Build APK
+          export PLUGIN
+
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          plugin = Path(os.environ["PLUGIN"])
+          gradle = plugin / "build.gradle"
+          manifest = plugin / "src/main/AndroidManifest.xml"
+
+          text = gradle.read_text()
+
+          text = re.sub(r'\bjcenter\s*\(\s*\)', 'mavenCentral()', text)
+
+          if not re.search(r'^\s*namespace\s+', text, re.M):
+              package = None
+              if manifest.exists():
+                  xml = manifest.read_text()
+                  match = re.search(
+                      r'<manifest\b[^>]*\bpackage\s*=\s*["\']([^"\']+)',
+                      xml
+                  )
+                  if match:
+                      package = match.group(1)
+
+              if not package:
+                  package = "io.github.edufolly.flutterbluetoothserial"
+
+              match = re.search(r'\bandroid\s*\{', text)
+              if not match:
+                  raise SystemExit(
+                      "Could not find android { block in Bluetooth plugin"
+                  )
+
+              pos = match.end()
+              text = (
+                  text[:pos]
+                  + '\n    namespace "' + package + '"\n'
+                  + text[pos:]
+              )
+
+          gradle.write_text(text)
+          print("Bluetooth plugin Gradle compatibility patch applied.")
+          PY
+
+      - name: Build debug APK
         working-directory: obd2_garage_v06
-        run: flutter build apk --debug
+        run: flutter build apk --debug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: obd2-garage-apk
+          name: obd2-garage-debug-apk
           path: obd2_garage_v06/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+
