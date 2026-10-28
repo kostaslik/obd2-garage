@@ -61,6 +61,125 @@ jobs:
           set -e
           cd "$PROJECT_DIR"
           flutter create . --platforms=android
+          
+      - name: Repair Dart source errors
+        shell: bash
+        run: |
+          set -e
+
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          project = Path(os.environ["PROJECT_DIR"])
+          main = project / "lib" / "main.dart"
+
+          if not main.exists():
+              raise SystemExit(f"Missing Dart file: {main}")
+
+          source = main.read_text(encoding="utf-8")
+
+          # dispose() returns void; do not await it.
+          source = re.sub(
+              r'\bawait\s+_connection\?\.dispose\(\)\s*;',
+              '_connection?.dispose();',
+              source
+          )
+
+          # Repair the broken multiline strings in showCodingInfo.
+          start = source.find('  void showCodingInfo(String feature) {')
+          end = source.find(
+              '  Future<void> disconnect() async {',
+              start
+          )
+
+          if start < 0 or end < 0:
+              raise SystemExit(
+                  "Could not locate showCodingInfo; source unchanged."
+              )
+
+          replacement = """  void showCodingInfo(String feature) {
+            late final String details;
+
+            if (feature == 'LED — προειδοποίηση καμένης λάμπας') {
+              details = '''
+          Διαθέσιμες ρυθμίσεις που μπορεί να υποστηρίζει το MINI R56, ανάλογα με τη μονάδα FRM και τον εξοπλισμό:
+
+          • Μεσαία/χαμηλή σκάλα (low beam)
+          • Μεγάλη σκάλα (high beam)
+          • Φώτα θέσης / Angel Eyes
+          • Μπροστινά και πίσω φλας
+          • Φώτα φρένων και τρίτο φως φρένων
+          • Φώτα ομίχλης, όπισθεν και πινακίδας
+
+          Η ακριβής λίστα εξαρτάται από FRM2 ή FRM3. Πρέπει πρώτα να αναγνωριστεί η μονάδα και να διαβαστεί/αποθηκευτεί η αρχική κωδικοποίηση. Το σημερινό ELM327 της εφαρμογής υποστηρίζει γενικό OBD-II και δεν μπορεί να γράψει αυτές τις ρυθμίσεις.
+          ''';
+            } else if (feature == 'Ηχητική υπενθύμιση ζώνης') {
+              details = '''
+          Στο R56 η σχετική ρύθμιση βρίσκεται στη μονάδα αερόσακων MRS6 και μπορεί να περιλαμβάνει:
+
+          • Αρχική ηχητική υπενθύμιση μετά την εκκίνηση
+          • Ηχητική/οπτική υπενθύμιση οδηγού
+          • Ηχητική/οπτική υπενθύμιση συνοδηγού
+
+          Δεν έχει επιβεβαιωθεί ακόμη ποια επιλογή είναι διαθέσιμη στη δική σου μονάδα. Η εφαρμογή δεν στέλνει αλλαγή με το ELM327. Για λόγους ασφάλειας, χρησιμοποίησε πάντα τη ζώνη.
+          ''';
+            } else {
+              details = 'Πριν προστεθούν άλλες πραγματικές επιλογές coding, χρειάζεται αναγνώριση των μονάδων του αυτοκινήτου, συμβατός αντάπτορας και ασφαλής ανάγνωση/αποθήκευση των αρχικών ρυθμίσεων. Το απλό ELM327 που χρησιμοποιείται τώρα για γενικό OBD-II δεν αρκεί για να θεωρήσουμε ότι υποστηρίζει BMW/MINI coding.';
+            }
+
+            showDialog<void>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: Text(feature),
+                content: SingleChildScrollView(
+                  child: Text(
+                    '$details\\n\\nΚατάσταση: Πληροφορίες/προετοιμασία μόνο — η εγγραφή coding δεν είναι ακόμη ενεργή. Δεν θα εμφανιστεί ψεύτικη επιβεβαίωση αλλαγής.'
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Εντάξει'),
+                  ),
+                ],
+              ),
+            );
+          }
+          """
+
+          source = source[:start] + replacement + source[end:]
+
+          # Repair the final multiline note.
+          note = """const Text('''Σημείωση: το PID 015C είναι η τυπική εντολή θερμοκρασίας λαδιού· αν εμφανιστεί N/A, δεν επιστράφηκαν δεδομένα. Η διαγραφή DTC αφορά γενικούς κωδικούς OBD-II και δεν διαγράφει απαραίτητα σφάλματα φωτισμού της μονάδας FRM. Το πραγματικό coding MINI και η σύνδεση iPhone δεν έχουν υλοποιηθεί ακόμη.
+          Το κουμπί «Έλεγχος αντάπτορα» διαβάζει ATI/AT@1/ATDP για να βοηθήσει στην αναγνώριση της συσκευής, αλλά δεν αποτελεί δοκιμή δυνατότητας coding.''', style: TextStyle(color: Colors.white60, fontSize: 12)),"""
+
+          source, count = re.subn(
+              r"const Text\\('Σημείωση: το PID 015C.*?fontSize: 12\\)\\),",
+              lambda _: note,
+              source,
+              count=1,
+              flags=re.S
+          )
+
+          if count != 1:
+              raise SystemExit(
+                  "Could not locate the final multiline note."
+              )
+
+          main.write_text(source, encoding="utf-8")
+
+          # The generated default test expects MyApp.
+          test_file = project / "test" / "widget_test.dart"
+          if test_file.exists():
+              test_source = test_file.read_text(encoding="utf-8")
+              test_source = test_source.replace("MyApp", "ObdApp")
+              test_file.write_text(test_source, encoding="utf-8")
+
+          print("Dart source repairs applied.")
+          PY
+
 
       - name: Restore Android manifest
         shell: bash
