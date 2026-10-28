@@ -17,7 +17,28 @@ class ObdApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'OBD2 Garage',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorSchemeSeed: const Color(0xFF28A879), brightness: Brightness.dark, useMaterial3: true),
+    theme: ThemeData(
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color(0xFFE53935),
+    brightness: Brightness.dark,
+  ),
+  scaffoldBackgroundColor: const Color(0xFF101114),
+  cardTheme: CardThemeData(
+    color: const Color(0xFF1B1D22),
+    elevation: 2,
+    margin: EdgeInsets.zero,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(18),
+      side: const BorderSide(color: Color(0xFF30323A)),
+    ),
+  ),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Color(0xFF101114),
+    foregroundColor: Colors.white,
+    centerTitle: false,
+  ),
+  useMaterial3: true,
+),
     home: const Dashboard(),
   );
 }
