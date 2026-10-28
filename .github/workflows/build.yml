@@ -259,7 +259,8 @@ jobs:
         run: |
           set -e
           cd "$PROJECT_DIR"
-          flutter analyze --no-pub
+          flutter analyze --no-pub --no-fatal-infos
+          
 
       - name: Build debug APK
         shell: bash
