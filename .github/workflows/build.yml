@@ -156,7 +156,8 @@ jobs:
           Το κουμπί «Έλεγχος αντάπτορα» διαβάζει ATI/AT@1/ATDP για να βοηθήσει στην αναγνώριση της συσκευής, αλλά δεν αποτελεί δοκιμή δυνατότητας coding.''', style: TextStyle(color: Colors.white60, fontSize: 12)),"""
 
           source, count = re.subn(
-              r"const Text\('''Σημείωση: το PID 015C.*?fontSize: 12\)\),",
+          r"const Text\((?:'''|')Σημείωση: το PID 015C.*?fontSize: 12\)\),",
+            
               lambda _: note,
               source,
               count=1,
