@@ -443,3 +443,783 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 }
+  // =========================
+  // PART 3: DASHBOARD & UI
+  // =========================
+
+  String _displayValue(String key, String unit) {
+    final value = _values[key];
+    if (value == null) return '-- $unit';
+    return '$value $unit';
+  }
+
+  Widget _sectionTitle(String title, {String? subtitle}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Colors.grey.shade400,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _metricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.redAccent, size: 24),
+            const SizedBox(height: 12),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors.grey.shade300,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rpmGauge() {
+    final rpm = double.tryParse(
+          (_values['rpm'] ?? '0').toString(),
+        ) ??
+        0.0;
+
+    final progress = (rpm / 7000).clamp(0.0, 1.0);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          vertical: 22,
+          horizontal: 16,
+        ),
+        child: Column(
+          children: [
+            const Text(
+              'ENGINE RPM',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: 210,
+              height: 210,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 200,
+                    height: 200,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 13,
+                      backgroundColor: Colors.white12,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        rpm >= 5500
+                            ? Colors.red
+                            : Colors.redAccent,
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        rpm.round().toString(),
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Text(
+                        'RPM',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _connection == null
+                  ? 'Waiting for OBD connection'
+                  : 'Live engine speed',
+              style: TextStyle(
+                color: Colors.grey.shade400,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _connectionCard() {
+    final connected = _connection != null;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(
+              connected
+                  ? Icons.bluetooth_connected
+                  : Icons.bluetooth,
+              color: connected
+                  ? Colors.greenAccent
+                  : Colors.orangeAccent,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    connected
+                        ? 'OBD adapter connected'
+                        : _status,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _deviceName.isNotEmpty
+                        ? _deviceName
+                        : 'Bluetooth ELM327',
+                    style: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: connected ? 'Disconnect' : 'Connect',
+              onPressed: connected
+                  ? () => _disconnect()
+                  : _chooseAdapter,
+              icon: Icon(
+                connected
+                    ? Icons.link_off
+                    : Icons.bluetooth_searching,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sportPage() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _connectionCard(),
+        _rpmGauge(),
+        _sectionTitle(
+          'LIVE ENGINE DATA',
+          subtitle: 'Real-time στοιχεία κινητήρα',
+        ),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.35,
+          children: [
+            _metricCard(
+              title: 'Coolant temperature',
+              value: _displayValue('coolant', '°C'),
+              icon: Icons.thermostat,
+            ),
+            _metricCard(
+              title: 'Oil temperature',
+              value: _displayValue('oilTemp', '°C'),
+              icon: Icons.oil_barrel_outlined,
+            ),
+            _metricCard(
+              title: 'Engine load',
+              value: _displayValue('load', '%'),
+              icon: Icons.speed,
+            ),
+            _metricCard(
+              title: 'Throttle position',
+              value: _displayValue('throttle', '%'),
+              icon: Icons.flash_on,
+            ),
+            _metricCard(
+              title: 'Short fuel trim',
+              value: _displayValue('stft', '%'),
+              icon: Icons.tune,
+            ),
+            _metricCard(
+              title: 'Long fuel trim',
+              value: _displayValue('ltft', '%'),
+              icon: Icons.analytics_outlined,
+            ),
+          ],
+        ),
+        _sectionTitle('QUICK ACTIONS'),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _connection == null
+                    ? _chooseAdapter
+                    : _refreshPids,
+                icon: Icon(
+                  _connection == null
+                      ? Icons.bluetooth_searching
+                      : Icons.refresh,
+                ),
+                label: Text(
+                  _connection == null
+                      ? 'Connect OBD'
+                      : 'Refresh data',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _identifyAdapter,
+                icon: const Icon(Icons.info_outline),
+                label: const Text('Adapter info'),
+              ),
+            ),
+          ],
+        ),
+        _sectionTitle('RECENT ACTIVITY'),
+        if (_history.isEmpty)
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.history),
+              title: Text('No activity yet'),
+              subtitle: Text('Οι ενέργειες θα εμφανιστούν εδώ.'),
+            ),
+          )
+        else
+          ..._history.take(8).map(
+            (entry) => Card(
+              child: ListTile(
+                dense: true,
+                leading: const Icon(
+                  Icons.circle,
+                  size: 9,
+                  color: Colors.redAccent,
+                ),
+                title: Text(entry.toString()),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _diagnosticsPage() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _connectionCard(),
+        _sectionTitle(
+          'DIAGNOSTICS',
+          subtitle: 'Engine fault codes and live data',
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.car_repair,
+                      color: Colors.redAccent,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Engine fault codes',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _dtcMessage.isNotEmpty
+                      ? _dtcMessage
+                      : 'Read available ECU trouble codes.',
+                  style: TextStyle(
+                    color: Colors.grey.shade400,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _connection == null
+                            ? null
+                            : _readTroubleCodes,
+                        icon: const Icon(Icons.search),
+                        label: const Text('Read codes'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _connection == null
+                            ? null
+                            : _clearTroubleCodes,
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Clear codes'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        _sectionTitle('STORED FAULTS'),
+        if (_dtcs.isEmpty)
+          const Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.info_outline,
+                color: Colors.orangeAccent,
+              ),
+              title: Text('No codes displayed'),
+              subtitle: Text(
+                'Δεν έχουν εμφανιστεί κωδικοί. '
+                'Αυτό δεν επιβεβαιώνει ότι δεν υπάρχουν βλάβες.',
+              ),
+            ),
+          )
+        else
+          ..._dtcs.map(
+            (code) => Card(
+              child: ListTile(
+                leading: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orangeAccent,
+                ),
+                title: Text(
+                  code.toString(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: const Text('ECU diagnostic trouble code'),
+              ),
+            ),
+          ),
+        _sectionTitle('LIVE DATA'),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.speed),
+                title: const Text('Engine RPM'),
+                trailing: Text(_displayValue('rpm', 'rpm')),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.thermostat),
+                title: const Text('Coolant temperature'),
+                trailing: Text(_displayValue('coolant', '°C')),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.flash_on),
+                title: const Text('Throttle position'),
+                trailing: Text(_displayValue('throttle', '%')),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('Short fuel trim'),
+                trailing: Text(_displayValue('stft', '%')),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.analytics_outlined),
+                title: const Text('Long fuel trim'),
+                trailing: Text(_displayValue('ltft', '%')),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _factoryPage() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _connectionCard(),
+        _sectionTitle(
+          'MINI FACTORY',
+          subtitle: 'MINI Cooper R56 · 2007',
+        ),
+        Card(
+          child: Column(
+            children: [
+              const ListTile(
+                leading: Icon(
+                  Icons.directions_car,
+                  color: Colors.redAccent,
+                ),
+                title: Text('MINI Cooper R56'),
+                subtitle: Text('2007 · N12B16A · 1.6 petrol'),
+              ),
+              const Divider(height: 1),
+              const ListTile(
+                leading: Icon(Icons.memory),
+                title: Text('Engine family'),
+                subtitle: Text('Prince / PSA-BMW N12'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.bluetooth),
+                title: const Text('Adapter information'),
+                subtitle: Text(_deviceName.isEmpty
+                    ? 'Bluetooth ELM327'
+                    : _deviceName),
+                trailing: const Icon(Icons.info_outline),
+                onTap: _identifyAdapter,
+              ),
+            ],
+          ),
+        ),
+        _sectionTitle('CODING & ADAPTATIONS'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.settings_suggest,
+                  color: Colors.redAccent,
+                  size: 30,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'MINI coding information',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Οι πραγματικές αλλαγές στις μονάδες BMW/MINI '
+                  'δεν είναι ακόμη ενεργές. Απαιτούνται κατάλληλο '
+                  'interface και υποστήριξη των αντίστοιχων μονάδων.',
+                  style: TextStyle(
+                    color: Colors.grey.shade400,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _showFactoryInfo,
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('More information'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        _sectionTitle('AVAILABLE INFORMATION'),
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.lightbulb_outline),
+            title: Text('LED lighting coding'),
+            subtitle: Text(
+              'Πληροφορίες συμβατότητας FRM — '
+              'δεν εκτελείται εγγραφή ρυθμίσεων.',
+            ),
+          ),
+        ),
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.notifications_off_outlined),
+            title: Text('Seat-belt reminder'),
+            subtitle: Text(
+              'Πληροφορίες μονάδας MRS — '
+              'δεν εκτελείται αλλαγή ρυθμίσεων.',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _servicePage() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _connectionCard(),
+        _sectionTitle(
+          'SERVICE CENTER',
+          subtitle: 'Maintenance and diagnostic tools',
+        ),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.monitor_heart_outlined,
+                  color: Colors.redAccent,
+                ),
+                title: const Text('Live engine data'),
+                subtitle: const Text(
+                  'Παρακολούθηση διαθέσιμων αισθητήρων.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  setState(() => _selectedTab = 0);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.car_repair,
+                  color: Colors.redAccent,
+                ),
+                title: const Text('Diagnostic trouble codes'),
+                subtitle: const Text(
+                  'Ανάγνωση και διαγραφή γενικών OBD-II DTC.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  setState(() => _selectedTab = 1);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.settings_suggest,
+                  color: Colors.redAccent,
+                ),
+                title: const Text('MINI Factory'),
+                subtitle: const Text(
+                  'Πληροφορίες για τις εργοστασιακές μονάδες.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  setState(() => _selectedTab = 2);
+                },
+              ),
+            ],
+          ),
+        ),
+        _sectionTitle('DEMO MODE'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.play_circle_outline,
+                  color: Colors.redAccent,
+                  size: 30,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Try the dashboard',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Η επίδειξη χρησιμοποιεί ενδεικτικές τιμές '
+                  'και δεν αποτελεί πραγματική μέτρηση.',
+                  style: TextStyle(
+                    color: Colors.grey.shade400,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _loadDemo,
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Start demo'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _clearDemo,
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('Reset demo'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        _sectionTitle('CONNECTION STATUS'),
+        Card(
+          child: ListTile(
+            leading: Icon(
+              _connection == null
+                  ? Icons.bluetooth_disabled
+                  : Icons.bluetooth_connected,
+              color: _connection == null
+                  ? Colors.orangeAccent
+                  : Colors.greenAccent,
+            ),
+            title: Text(_status),
+            subtitle: Text(
+              _deviceAddress.isEmpty
+                  ? 'Δεν έχει επιλεγεί διεύθυνση αντάπτορα.'
+                  : _deviceAddress,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = <Widget>[
+      _sportPage(),
+      _diagnosticsPage(),
+      _factoryPage(),
+      _servicePage(),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Row(
+          children: [
+            Icon(Icons.directions_car_filled),
+            SizedBox(width: 10),
+            Text('OBD Garage R56'),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh live data',
+            onPressed: _connection == null ? null : _refreshPids,
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            tooltip: 'Connect adapter',
+            onPressed: _connection == null
+                ? _chooseAdapter
+                : () => _disconnect(),
+            icon: Icon(
+              _connection == null
+                  ? Icons.bluetooth_searching
+                  : Icons.link_off,
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: IndexedStack(
+        index: _selectedTab,
+        children: pages,
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedTab,
+        onDestinationSelected: (index) {
+          setState(() => _selectedTab = index);
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.speed_outlined),
+            selectedIcon: Icon(Icons.speed),
+            label: 'Sport',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.car_repair_outlined),
+            selectedIcon: Icon(Icons.car_repair),
+            label: 'Diagnostics',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_suggest_outlined),
+            selectedIcon: Icon(Icons.settings_suggest),
+            label: 'MINI Factory',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.build_outlined),
+            selectedIcon: Icon(Icons.build),
+            label: 'Service',
+          ),
+        ],
+      ),
+    );
+  }
+}
